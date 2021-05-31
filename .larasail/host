@@ -7,7 +7,7 @@
 #
 # This command will create a new nginx host file for a specific domain
 # pass the website domain and the folder location, here's an example:
-# 
+#
 # $ larasail host mywebsite.com /var/www/mywebsite
 #
 # The above command will create a new nginx host that will listen
@@ -33,6 +33,7 @@ fi
 phpVersion="$(php -v | head -n 1 | cut -d " " -f 2 | cut -c 1,2,3)"
 domain=$1
 rootPath=$2
+withWwwAlias=$3
 sitesEnable='/etc/nginx/sites-enabled/'
 sitesAvailable='/etc/nginx/sites-available/'
 serverRoot='/var/www/'
@@ -56,8 +57,8 @@ fi
 if ! [ -d $rootPath ]; then
 	mkdir $rootPath
 	chmod 755 $rootPath
-        mkdir "$rootPath/public"
-        chmod 755 "$rootPath/public"
+	mkdir "$rootPath/public"
+	chmod 755 "$rootPath/public"
 	if ! echo "Hello World!" > $rootPath/public/index.php
 	then
 		red "ERROR: Not able to write in file $rootPath/public/index.php. Please check permissions."
@@ -65,6 +66,18 @@ if ! [ -d $rootPath ]; then
 	else
 		echo "Added file to $rootPath/public/index.php"
 	fi
+fi
+
+if [ -d ${rootPath}/storage ]; then
+	echo "Updating the permissions of the storage folder"
+	sudo chown -R larasail:www-data ${rootPath}/storage
+	sudo chmod -R 775 ${rootPath}/storage
+fi
+
+if [ -d ${rootPath}/bootstrap/cache ]; then
+	echo "Updating the permissions of the bootstrap/cache folder"
+	sudo chown -R larasail:www-data ${rootPath}/bootstrap/cache
+	sudo chmod -R 775 ${rootPath}/bootstrap/cache
 fi
 
 if ! [ -d $sitesEnable ]; then
@@ -78,6 +91,13 @@ if ! [ -d $sitesAvailable ]; then
 fi
 
 configName=$domain
+serverName=$domain
+certbotDomains="-d ${domain}"
+
+if [ "$withWwwAlias" = "--www-alias" ]; then
+        serverName="$domain www.$domain"
+	certbotDomains="-d ${domain} -d www.${domain}"
+fi
 
 if ! echo "server {
 
@@ -85,7 +105,7 @@ if ! echo "server {
 
         index index.php index.html index.htm;
 
-        server_name $domain;
+        server_name $serverName;
 
         location / {
                 try_files \$uri \$uri/ /index.php?\$query_string;
@@ -108,7 +128,7 @@ if ! echo "server {
         location ~ /\.ht {
                 deny all;
         }
-        
+
 }" > $sitesAvailable$configName
 then
 	echo "There is an ERROR create $configName file"
@@ -129,5 +149,14 @@ ln -s $sitesAvailable$configName $sitesEnable$configName
 
 service nginx restart
 
-echo "Complete! \nYou now have a new Virtual Host \nYour new host is: http://$domain \nAnd its located at $rootPath"
+cyan "Complete! \nYou now have a new Virtual Host \nYour new host is: http://$domain \nAnd its located at $rootPath"
+
+echo "Would you like to install Let's Encrypt SSL for ${domain}?"
+echo "[yes/no]"
+read letsencrypt
+
+if [ "$letsencrypt" = "yes" ]; then
+	sudo certbot --nginx ${certbotDomains}
+fi
+
 exit;
